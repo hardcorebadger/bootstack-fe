@@ -66,6 +66,7 @@ const AuthContext = createContext({
   ...initialState,
   method: 'jwt',
   login: () => Promise.resolve(),
+  googleLogin: () => Promise.resolve(),
   logout: () => Promise.resolve(),
   register: () => Promise.resolve()
 });
@@ -84,13 +85,11 @@ export function AuthProvider({ children }) {
     const initialize = async () => {
       try {
         const accessToken = localStorage.getItem('accessToken');
-        console.log("a");
         if (accessToken && isValidToken(accessToken)) {
           setSession(accessToken);
-          console.log("b");
           const response = await axiosInstance.get('/api/me');
 
-          const user  = response.data;
+          const { user }  = response.data;
           user.accessLevel = 1;
           console.log("User Logged in as:");
           console.log(user);
@@ -133,6 +132,11 @@ export function AuthProvider({ children }) {
     });
     const { access_token, user } = response.data;
     console.log(user);
+    mixpanel.identify(user.email);
+    mixpanel.people.set({ "User ID": user.id });
+    mixpanel.people.set({ "Email": user.email });
+    mixpanel.people.set({ "Name": user.name });
+    mixpanel.track('Log in');
     setSession(access_token);
 
 
@@ -144,20 +148,45 @@ export function AuthProvider({ children }) {
     });
   };
 
-  const register = async (email, first_name, last_name, password, password_confirmation, token) => {
+  const googleLogin = async (credential, client_id) => {
+    const response = await axiosInstance.post('/api/google', {
+      credential
+    });
+    console.log(response.data);
+
+    const { access_token, user } = response.data;
+    console.log(user);
+    mixpanel.identify(user.email);
+    mixpanel.people.set({ "User ID": user.id });
+    mixpanel.people.set({ "Email": user.email });
+    mixpanel.people.set({ "Name": user.name });
+    mixpanel.track('Log in');
+    setSession(access_token);
+
+
+    dispatch({
+      type: 'LOGIN',
+      payload: {
+        user: user
+      },
+    });
+  };
+
+  const register = async (email, name, password) => {
     let q = {
       "email": email,
       "password": password,
-      "first_name": first_name,
-      "last_name": last_name,
-      "password_confirmation": password_confirmation,
+      "name": name,
     };
-    if (token != null) {
-      q["state"] = token;
-    }
+   
     const response = await axiosInstance.post('/api/register', q);
     const { access_token, user } = response.data;
     console.log(user);
+    mixpanel.identify(user.email);
+    mixpanel.people.set({ "User ID": user.id });
+    mixpanel.people.set({ "Email": user.email });
+    mixpanel.people.set({ "Name": user.name });
+    mixpanel.track('Register');
     setSession(access_token);
 
     dispatch({
@@ -177,10 +206,10 @@ export function AuthProvider({ children }) {
   };
 
   const refreshUser = async () => {
-    const response = await GET('/api/user-profile', {});
+    const response = await GET('/api/me', {});
     if (!response.success)
       return;
-    const user  = response.response;   
+    const { user }  = response.response;   
     user.accessLevel = 1;
     dispatch({
       type: 'INITIALIZE',
@@ -197,6 +226,7 @@ export function AuthProvider({ children }) {
       value={{
         ...state,
         login,
+        googleLogin,
         logout,
         register,
         refreshUser,
@@ -241,6 +271,7 @@ const setSession = (accessToken) => {
         // handleTokenExpired(exp);
     } else {
         localStorage.removeItem('accessToken');
+        localStorage.clear();
         delete axiosInstance.defaults.headers.common.Authorization;
     }
 };
